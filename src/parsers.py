@@ -9,6 +9,22 @@ async def _parse_search_results_json(json_data: dict, source: str) -> list:
     """解析搜索API的JSON数据，返回基础商品信息列表。"""
     page_data = []
     try:
+        # 首先检查API响应是否有错误
+        ret_field = await safe_get(json_data, "ret", default=[])
+        if isinstance(ret_field, list) and ret_field:
+            ret_string = str(ret_field)
+            if "被挤爆啦" in ret_string or "RGV587_ERROR" in ret_string:
+                print(f"LOG: ({source}) 检测到闲鱼API限流错误: {ret_string}")
+                print("   -> 建议等待30-60分钟后重试，或降低请求频率")
+                return []
+            elif "FAIL_SYS_USER_VALIDATE" in ret_string:
+                print(f"LOG: ({source}) 检测到闲鱼反爬虫验证: {ret_string}")
+                print("   -> 需要重新登录或处理验证码")
+                return []
+            elif "ERROR" in ret_string:
+                print(f"LOG: ({source}) API返回错误: {ret_string}")
+                return []
+        
         items = await safe_get(json_data, "data", "resultList", default=[])
         if not items:
             print(f"LOG: ({source}) API响应中未找到商品列表 (resultList)。")

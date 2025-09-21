@@ -64,6 +64,6 @@
     "description": "蛇钞",
     "ai_prompt_base_file": "prompts/base_prompt.txt",
     "ai_prompt_criteria_file": "prompts/蛇钞_criteria.txt",
-    "is_running": true
+    "is_running": false
   }
-]]
+]

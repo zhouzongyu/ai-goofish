@@ -2,8 +2,10 @@ import asyncio
 import json
 import os
 import random
+import time
 from datetime import datetime
 from urllib.parse import urlencode
+import requests
 
 from playwright.async_api import (
     Response,
@@ -50,6 +52,170 @@ from src.anti_crawler_config import (
     MANUAL_INTERVENTION,
 )
 from src.simple_captcha_solver import simple_captcha_solver
+
+
+async def search_xianyu_api(keyword, min_price=None, max_price=None, 
+                           personal_only=False, page_number=1, 
+                           rows_per_page=30):
+    """
+    直接调用闲鱼搜索API获取商品数据
+    
+    Args:
+        keyword: 搜索关键词
+        min_price: 最低价格
+        max_price: 最高价格
+        personal_only: 是否只搜索个人卖家
+        page_number: 页码
+        rows_per_page: 每页商品数量
+    
+    Returns:
+        API响应数据
+    """
+    import urllib.parse
+    
+    # 从xianyu_state.json读取Cookie和认证信息
+    try:
+        with open(STATE_FILE, 'r', encoding='utf-8') as f:
+            state_data = json.load(f)
+        
+        # 提取Cookie信息
+        cookies = state_data.get('cookies', [])
+        cookie_dict = {}
+        for cookie in cookies:
+            cookie_dict[cookie['name']] = cookie['value']
+        
+        # 构建Cookie字符串
+        cookie_str = "; ".join([f"{k}={v}" for k, v in cookie_dict.items()])
+        print(f"LOG: 从 {STATE_FILE} 加载了 {len(cookie_dict)} 个Cookie")
+        
+        # 提取认证令牌
+        m_h5_tk = cookie_dict.get('_m_h5_tk', '')
+        m_h5_tk_enc = cookie_dict.get('_m_h5_tk_enc', '')
+        tb_token = cookie_dict.get('_tb_token_', '')
+        
+        print(f"LOG: 认证令牌 - _m_h5_tk: {m_h5_tk[:20]}..., _tb_token_: {tb_token[:20]}...")
+        
+    except Exception as e:
+        print(f"LOG: 读取Cookie失败: {e}")
+        cookie_str = ""
+        m_h5_tk = ""
+        m_h5_tk_enc = ""
+        tb_token = ""
+    
+    # 构建API URL
+    base_url = "https://h5api.m.goofish.com/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/"
+    
+    # 构建请求体
+    request_body = {
+        "pageNumber": page_number,
+        "keyword": keyword,
+        "fromFilter": True,
+        "rowsPerPage": rows_per_page,
+        "sortValue": "",
+        "sortField": "",
+        "customDistance": "",
+        "gps": "",
+        "propValueStr": {},
+        "customGps": "",
+        "searchReqFromPage": "pcSearch",
+        "extraFilterValue": "{}",
+        "userPositionJson": "{}"
+    }
+    
+    # 添加价格筛选
+    if min_price or max_price:
+        price_range = ""
+        if min_price:
+            price_range += f"{min_price},"
+        else:
+            price_range += ","
+        if max_price:
+            price_range += f"{max_price};"
+        else:
+            price_range += ";"
+        request_body["propValueStr"]["searchFilter"] = f"priceRange:{price_range}"
+    
+    # 添加个人卖家筛选
+    if personal_only:
+        if "searchFilter" not in request_body["propValueStr"]:
+            request_body["propValueStr"]["searchFilter"] = ""
+        request_body["propValueStr"]["searchFilter"] += "sellerType:1;"
+    
+    # 生成时间戳和签名
+    timestamp = str(int(time.time() * 1000))
+    
+    # 尝试生成简单的签名（基于令牌和时间戳）
+    import hashlib
+    if m_h5_tk and '_' in m_h5_tk:
+        # 提取令牌的前半部分
+        token_part = m_h5_tk.split('_')[0]
+        # 简单的签名生成（实际算法可能更复杂）
+        sign_data = f"{token_part}&{timestamp}&34839810&{json.dumps(request_body, ensure_ascii=False, separators=(',', ':'))}"
+        sign = hashlib.md5(sign_data.encode('utf-8')).hexdigest()
+        print(f"LOG: 生成签名: {sign[:20]}...")
+    else:
+        sign = ""
+        print("LOG: 无法生成签名，缺少_m_h5_tk令牌")
+    
+    # 构建查询参数
+    params = {
+        "jsv": "2.7.2",
+        "appKey": "34839810",
+        "t": timestamp,
+        "sign": sign,
+        "v": "1.0",
+        "type": "originaljson",
+        "accountSite": "xianyu",
+        "dataType": "json",
+        "timeout": "20000",
+        "api": "mtop.taobao.idlemtopsearch.pc.search",
+        "sessionOption": "AutoLoginOnly",
+        "spm_cnt": "a21ybx.search.0.0",
+        "spm_pre": "a21ybx.search.searchInput.0"
+    }
+    
+    # 设置请求头 - 使用从文件读取的Cookie
+    headers = {
+        "Host": "h5api.m.goofish.com",
+        "Cookie": cookie_str,
+        "sec-ch-ua-platform": '"Windows"',
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+        "accept": "application/json",
+        "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"',
+        "content-type": "application/x-www-form-urlencoded",
+        "sec-ch-ua-mobile": "?0",
+        "origin": "https://www.goofish.com",
+        "sec-fetch-site": "same-site",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+        "referer": "https://www.goofish.com/",
+        "accept-language": "zh-CN,zh;q=0.9",
+        "priority": "u=1, i"
+    }
+    
+    # 将请求体编码为URL格式
+    data = urllib.parse.urlencode({"data": json.dumps(request_body, ensure_ascii=False)})
+    
+    try:
+        # 禁用SSL验证以解决证书问题
+        response = requests.post(
+            base_url,
+            params=params,
+            data=data,
+            headers=headers,
+            timeout=30,
+            verify=False  # 禁用SSL验证
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"API请求失败，状态码: {response.status_code}")
+            return {"ret": [f"HTTP_ERROR::{response.status_code}"], "data": {}}
+            
+    except Exception as e:
+        print(f"API请求异常: {e}")
+        return {"ret": [f"REQUEST_ERROR::{str(e)}"], "data": {}}
 
 
 async def check_anti_crawler_measures(page, keyword: str) -> bool:
@@ -386,122 +552,85 @@ async def scrape_xianyu(task_config: dict, debug_limit: int = 0, retry_count: in
         page = await context.new_page()
 
         try:
-            print("LOG: 步骤 1 - 直接导航到搜索结果页...")
-            # 使用 'q' 参数构建正确的搜索URL，并进行URL编码
-            params = {'q': keyword}
-            search_url = f"https://www.goofish.com/search?{urlencode(params)}"
-            print(f"   -> 目标URL: {search_url}")
+            print("LOG: 步骤 1 - 直接调用闲鱼搜索API...")
+            print(f"   -> 搜索关键词: {keyword}")
+            print(f"   -> 价格范围: {min_price or '无限制'} - {max_price or '无限制'}")
+            print(f"   -> 个人卖家: {'是' if personal_only else '否'}")
 
-            # 使用 expect_response 在导航的同时捕获初始搜索的API数据
-            async with page.expect_response(lambda r: API_URL_PATTERN in r.url, timeout=30000) as response_info:
-                await page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
+            # 直接调用搜索API
+            search_result = await search_xianyu_api(
+                keyword=keyword,
+                min_price=min_price,
+                max_price=max_price,
+                personal_only=personal_only,
+                page_number=1,
+                rows_per_page=30
+            )
+            
+            print(f"LOG: API调用完成，响应状态: {search_result.get('ret', '未知')}")
 
-            initial_response = await response_info.value
-            # 输出网下搜索结果数据
-            print(initial_response)
+            # 检查API响应是否有错误
+            ret_field = await safe_get(search_result, "ret", default=[])
+            if isinstance(ret_field, list) and ret_field:
+                ret_string = str(ret_field)
+                if "被挤爆啦" in ret_string or "RGV587_ERROR" in ret_string:
+                    print(f"\n==================== API限流检测 ====================")
+                    print(f"检测到闲鱼API限流错误: {ret_string}")
+                    print("建议解决方案:")
+                    print("1. 等待30-60分钟后重试")
+                    print("2. 降低爬取频率，增加随机延迟")
+                    print("3. 检查是否有其他程序同时在访问闲鱼")
+                    print("4. 考虑使用代理IP轮换")
+                    print("========================================================")
+                    await browser.close()
+                    return 0
+                elif "FAIL_SYS_USER_VALIDATE" in ret_string:
+                    print(f"\n==================== 反爬虫验证检测 ====================")
+                    print(f"检测到闲鱼反爬虫验证: {ret_string}")
+                    print("建议解决方案:")
+                    print("1. 重新登录获取新的认证状态")
+                    print("2. 设置 RUN_HEADLESS=false 手动处理验证")
+                    print("3. 等待更长时间后重试")
+                    print("========================================================")
+                    await browser.close()
+                    return 0
+                elif "HTTP_ERROR" in ret_string or "REQUEST_ERROR" in ret_string:
+                    print(f"\n==================== API请求错误 ====================")
+                    print(f"API请求失败: {ret_string}")
+                    print("建议解决方案:")
+                    print("1. 检查网络连接")
+                    print("2. 检查API接口是否正常")
+                    print("3. 稍后重试")
+                    print("========================================================")
+                    await browser.close()
+                    return 0
 
-            # 等待页面加载出关键筛选元素，以确认已成功进入搜索结果页
-            await page.wait_for_selector('text=新发布', timeout=15000)
-
-            # --- 增强的反爬虫检测机制 ---
-            anti_crawler_detected = await check_anti_crawler_measures(page, keyword)
-            if anti_crawler_detected:
+            # 解析搜索结果
+            search_items = await _parse_search_results_json(search_result, "API搜索")
+            if not search_items:
+                print("LOG: 未获取到任何商品数据，任务结束。")
                 await browser.close()
-                
-                # 智能重试机制
-                if should_retry(retry_count):
-                    retry_delay = get_retry_delay(retry_count)
-                    print(f"\n🔄 启动智能重试机制 (第 {retry_count + 1}/{3} 次)")
-                    print(f"⏰ 等待 {retry_delay} 秒后重试...")
-                    await asyncio.sleep(retry_delay)
-                    
-                    # 调整策略：增加更多随机延迟
-                    print("🔧 调整爬取策略：增加随机延迟，降低检测风险")
-                    return await scrape_xianyu(task_config, debug_limit, retry_count + 1)
-                else:
-                    print("❌ 重试次数已达上限，任务终止")
-                    return processed_item_count
-            # --- 结束增强检测 ---
+                return 0
+            
+            print(f"LOG: 成功获取到 {len(search_items)} 个商品")
 
-            try:
-                await page.click("div[class*='closeIconBg']", timeout=3000)
-                print("LOG: 已关闭广告弹窗。")
-            except PlaywrightTimeoutError:
-                print("LOG: 未检测到广告弹窗。")
+            # 由于使用API直接获取数据，跳过页面操作和反爬虫检测
+            print("LOG: 步骤 2 - 开始处理商品数据...")
+            
+            # 应用调试限制
+            if debug_limit > 0:
+                search_items = search_items[:debug_limit]
+                print(f"LOG: 调试模式：限制处理前 {debug_limit} 个商品")
+            
+            all_items = search_items
+            print(f"LOG: 总共获取到 {len(all_items)} 个商品")
 
-            final_response = None
-            print("\nLOG: 步骤 2 - 应用筛选条件...")
-            await page.click('text=新发布')
-            await random_sleep(2, 4) # 原来是 (1.5, 2.5)
-            async with page.expect_response(lambda r: API_URL_PATTERN in r.url, timeout=20000) as response_info:
-                await page.click('text=最新')
-                # --- 修改: 增加排序后的等待时间 ---
-                await random_sleep(4, 7) # 原来是 (3, 5)
-            final_response = await response_info.value
-
-            if personal_only:
-                async with page.expect_response(lambda r: API_URL_PATTERN in r.url, timeout=20000) as response_info:
-                    await page.click('text=个人闲置')
-                    # --- 修改: 将固定等待改为随机等待，并加长 ---
-                    await random_sleep(4, 6) # 原来是 asyncio.sleep(5)
-                final_response = await response_info.value
-
-            if min_price or max_price:
-                price_container = page.locator('div[class*="search-price-input-container"]').first
-                if await price_container.is_visible():
-                    if min_price:
-                        await price_container.get_by_placeholder("¥").first.fill(min_price)
-                        # --- 修改: 将固定等待改为随机等待 ---
-                        await random_sleep(1, 2.5) # 原来是 asyncio.sleep(5)
-                    if max_price:
-                        await price_container.get_by_placeholder("¥").nth(1).fill(max_price)
-                        # --- 修改: 将固定等待改为随机等待 ---
-                        await random_sleep(1, 2.5) # 原来是 asyncio.sleep(5)
-
-                    async with page.expect_response(lambda r: API_URL_PATTERN in r.url, timeout=20000) as response_info:
-                        await page.keyboard.press('Tab')
-                        # --- 修改: 增加确认价格后的等待时间 ---
-                        await random_sleep(4, 7) # 原来是 asyncio.sleep(5)
-                    final_response = await response_info.value
-                else:
-                    print("LOG: 警告 - 未找到价格输入容器。")
-
-            print("\nLOG: 所有筛选已完成，开始处理商品列表...")
-
-            current_response = final_response if final_response and final_response.ok else initial_response
-            for page_num in range(1, max_pages + 1):
-                if stop_scraping: break
-                print(f"\n--- 正在处理第 {page_num}/{max_pages} 页 ---")
-
-                if page_num > 1:
-                    # 查找未被禁用的“下一页”按钮。闲鱼通过添加 'disabled' 类名来禁用按钮，而不是使用 disabled 属性。
-                    next_btn = page.locator("[class*='search-pagination-arrow-right']:not([class*='disabled'])")
-                    if not await next_btn.count():
-                        print("LOG: 已到达最后一页，未找到可用的“下一页”按钮，停止翻页。")
-                        break
-                    try:
-                        async with page.expect_response(lambda r: API_URL_PATTERN in r.url, timeout=20000) as response_info:
-                            await next_btn.click()
-                            # --- 修改: 增加翻页后的等待时间 ---
-                            await random_sleep(5, 8) # 原来是 (1.5, 3.5)
-                        current_response = await response_info.value
-                    except PlaywrightTimeoutError:
-                        print(f"LOG: 翻页到第 {page_num} 页超时，停止翻页。")
-                        break
-
-                if not (current_response and current_response.ok):
-                    print(f"LOG: 第 {page_num} 页响应无效，跳过。")
-                    continue
-
-                basic_items = await _parse_search_results_json(await current_response.json(), f"第 {page_num} 页")
-                if not basic_items: break
-
-                total_items_on_page = len(basic_items)
-                for i, item_data in enumerate(basic_items, 1):
-                    if debug_limit > 0 and processed_item_count >= debug_limit:
-                        print(f"LOG: 已达到调试上限 ({debug_limit})，停止获取新商品。")
-                        stop_scraping = True
-                        break
+            # 处理所有商品
+            for i, item_data in enumerate(all_items, 1):
+                if debug_limit > 0 and processed_item_count >= debug_limit:
+                    print(f"LOG: 已达到调试上限 ({debug_limit})，停止处理商品。")
+                    stop_scraping = True
+                    break
 
                     unique_key = get_link_unique_key(item_data["商品链接"])
                     if unique_key in processed_links:
