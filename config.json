@@ -1,0 +1,69 @@
+[
+  {
+    "task_name": "MacBook Air M1",
+    "enabled": true,
+    "keyword": "macbook air m1",
+    "max_pages": 1,
+    "personal_only": true,
+    "min_price": "3000",
+    "max_price": "5000",
+    "cron": null,
+    "ai_prompt_base_file": "prompts/base_prompt.txt",
+    "ai_prompt_criteria_file": "prompts/macbook_criteria.txt",
+    "is_running": false
+  },
+  {
+    "task_name": "DJI Mini 3 Pro",
+    "enabled": true,
+    "keyword": "mini 3 pro",
+    "max_pages": 1,
+    "personal_only": true,
+    "ai_prompt_base_file": "prompts/base_prompt.txt",
+    "ai_prompt_criteria_file": "prompts/dji_mini3_criteria.txt",
+    "min_price": "3500",
+    "max_price": "4500",
+    "cron": null,
+    "is_running": false
+  },
+  {
+    "task_name": "婴儿车",
+    "enabled": true,
+    "keyword": "babycare 婴儿车",
+    "max_pages": 1,
+    "personal_only": true,
+    "min_price": "500",
+    "max_price": "1000",
+    "cron": null,
+    "ai_prompt_base_file": "prompts/base_prompt.txt",
+    "ai_prompt_criteria_file": "prompts/babycare_婴儿车_criteria.txt",
+    "is_running": false
+  },
+  {
+    "task_name": "龙钞",
+    "enabled": true,
+    "keyword": "龙钞",
+    "max_pages": 1,
+    "personal_only": true,
+    "min_price": "300",
+    "max_price": "1000",
+    "cron": "*/1 * * * *",
+    "description": "抢拍价格是300元至1000元的龙钞",
+    "ai_prompt_base_file": "prompts/base_prompt.txt",
+    "ai_prompt_criteria_file": "prompts/龙钞_criteria.txt",
+    "is_running": false
+  },
+  {
+    "task_name": "蛇钞",
+    "enabled": true,
+    "keyword": "蛇钞",
+    "max_pages": 1,
+    "personal_only": true,
+    "min_price": "100",
+    "max_price": "1000",
+    "cron": "*/1 * * * *",
+    "description": "蛇钞",
+    "ai_prompt_base_file": "prompts/base_prompt.txt",
+    "ai_prompt_criteria_file": "prompts/蛇钞_criteria.txt",
+    "is_running": true
+  }
+]]
